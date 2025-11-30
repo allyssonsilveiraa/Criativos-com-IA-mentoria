@@ -1,17 +1,18 @@
 
 import React, { forwardRef } from 'react';
-import { SceneData, AdFormat, FONTS } from '../types';
+import { SceneData, AdFormat, FONTS, CTA_DECORATIONS } from '../types';
 
 interface CreativePreviewProps {
   format: AdFormat;
   data: SceneData;
-  scale?: number;
 }
 
-const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ format, data, scale = 1 }, ref) => {
+const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ format, data }, ref) => {
   const preset = FONTS.find(f => f.id === data.fontPresetId) || FONTS[0];
+  const ctaDecoration = CTA_DECORATIONS.find(d => d.id === data.ctaDecorationId);
 
   // Logic to calculate responsive spacing based on format height/width
+  // Base scale is 1 for 1080px width.
   const baseScale = format.width / 1080;
 
   // Occupancy mapping
@@ -19,7 +20,14 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
   const maxTextWidth = `${widthPercentage}%`;
 
   // Determine active image source
-  const activeImage = data.imageSourceType === 'generated' ? data.generatedImage : data.uploadedImage;
+  let activeImage = null;
+  if (data.imageSourceType === 'generated') {
+    activeImage = data.generatedImage;
+  } else {
+    activeImage = data.uploadedImages && data.uploadedImages.length > 0 
+      ? data.uploadedImages[data.activeImageIndex] 
+      : null;
+  }
 
   // Alignment logic
   const justifyClass = 
@@ -32,11 +40,16 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
     data.layout.textAlign === 'right' ? 'items-end text-right' :
     'items-center text-center';
 
-  // Vertical Shift Logic
-  // If format is Story, we use the specific storyOffset. 
-  // If format is anything else, we use the global verticalOffset.
+  // Format Specific Logic (Story vs Rest)
   const isStory = format.type === 'story';
+  
+  // Vertical Shift for text (Global)
   const yOffsetValue = isStory ? data.layout.storyOffset : data.layout.verticalOffset;
+
+  // Image Transform Logic (Story override vs Standard)
+  const imgScale = isStory ? data.storyImageScale : data.imageScale;
+  const imgX = isStory ? data.storyImageX : data.imageX;
+  const imgY = isStory ? data.storyImageY : data.imageY;
 
   // Logo Positioning
   const logoPosClass = {
@@ -46,18 +59,20 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
     'bottom-right': 'bottom-12 right-12',
   }[data.layout.logoPosition];
 
+  // Dynamic Padding based on slider
+  const sidePadding = `${data.layout.contentPadding}px`;
+
   return (
     <div 
       ref={ref}
       style={{
         width: format.width,
         height: format.height,
-        transform: `scale(${scale})`,
-        transformOrigin: 'top left',
         overflow: 'hidden',
-        backgroundColor: '#111827'
+        backgroundColor: '#111827',
+        position: 'relative'
       }}
-      className="relative flex flex-col shrink-0 select-none"
+      className="flex flex-col shrink-0 select-none"
     >
       {/* Background Image Layer with Zoom/Pan/Blur */}
       <div className="absolute inset-0 z-0 overflow-hidden">
@@ -67,7 +82,7 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
             alt="Ad Background" 
             className="w-full h-full object-cover origin-center transition-all duration-300 ease-out"
             style={{
-              transform: `scale(${data.imageScale}) translate(${data.imageX}px, ${data.imageY}px)`,
+              transform: `scale(${imgScale}) translate(${imgX}px, ${imgY}px)`,
               filter: `blur(${data.layout.backgroundBlur}px)`
             }}
           />
@@ -88,7 +103,7 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
           />
         )}
         
-        {/* Subtle Gradient (Always on for legibility unless fully covered, helps with depth) */}
+        {/* Subtle Gradient (Always on for legibility unless fully covered) */}
         {!data.layout.showOverlay && (
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10 pointer-events-none" />
         )}
@@ -119,7 +134,10 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
       )}
 
       {/* Content Layer */}
-      <div className={`absolute inset-0 z-10 flex flex-col px-12 ${justifyClass} ${itemsAlignClass}`}>
+      <div 
+        className={`absolute inset-0 z-10 flex flex-col ${justifyClass} ${itemsAlignClass}`}
+        style={{ paddingLeft: sidePadding, paddingRight: sidePadding }}
+      >
         
         <div 
             className="flex flex-col transition-all duration-300 ease-out"
@@ -136,10 +154,13 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
               style={{ 
                 fontFamily: preset.subFont,
                 fontSize: `${data.subtitle.size * 0.25}em`,
-                lineHeight: 1.2,
-                color: data.subtitle.color
+                lineHeight: data.subtitle.lineHeight,
+                color: data.subtitle.color,
+                letterSpacing: `${data.subtitle.letterSpacing}em`,
+                fontWeight: data.subtitle.weight,
+                transform: `translateY(${data.subtitle.verticalShift}px)`
               }}
-              className="tracking-[0.15em] uppercase font-medium drop-shadow-md"
+              className="uppercase drop-shadow-md"
             >
               {data.subtitle.content}
             </h3>
@@ -151,10 +172,13 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
               style={{ 
                 fontFamily: preset.titleFont,
                 fontSize: `${data.title.size * 0.6}em`,
-                lineHeight: 1.05,
-                color: data.title.color
+                lineHeight: data.title.lineHeight,
+                color: data.title.color,
+                letterSpacing: `${data.title.letterSpacing}em`,
+                fontWeight: data.title.weight,
+                transform: `translateY(${data.title.verticalShift}px)`
               }}
-              className="font-bold drop-shadow-xl"
+              className="drop-shadow-xl"
             >
               {data.title.content}
             </h1>
@@ -166,30 +190,62 @@ const CreativePreview = forwardRef<HTMLDivElement, CreativePreviewProps>(({ form
               style={{ 
                 fontFamily: preset.bodyFont,
                 fontSize: `${data.body.size * 0.18}em`,
-                color: data.body.color
+                lineHeight: data.body.lineHeight,
+                color: data.body.color,
+                letterSpacing: `${data.body.letterSpacing}em`,
+                fontWeight: data.body.weight,
+                transform: `translateY(${data.body.verticalShift}px)`
               }}
-              className="leading-relaxed font-light drop-shadow-md"
+              className="drop-shadow-md"
             >
               {data.body.content}
             </p>
           )}
 
-          {/* CTA */}
+          {/* CTA Group */}
           {data.cta.visible && (
-            <div className={`mt-2 ${data.layout.textAlign === 'center' ? 'mx-auto' : ''}`}>
+            <div 
+              className={`mt-2 flex flex-col ${data.layout.textAlign === 'center' ? 'items-center' : data.layout.textAlign === 'right' ? 'items-end' : 'items-start'}`}
+              style={{
+                 transform: `translateY(${data.cta.verticalShift}px)`
+              }}
+            >
               <button 
                 style={{ 
                   fontFamily: preset.bodyFont,
                   fontSize: `${data.cta.size * 0.18}em`,
+                  lineHeight: data.cta.lineHeight,
                   padding: '0.8em 2em',
-                  backgroundColor: data.cta.color,
-                  // Simple text contrast logic (not perfect but functional for MVP)
-                  color: '#000000' 
+                  backgroundColor: data.cta.backgroundColor || '#ffffff',
+                  color: data.cta.color,
+                  letterSpacing: `${data.cta.letterSpacing}em`,
+                  fontWeight: data.cta.weight
                 }}
-                className="rounded-sm font-bold uppercase tracking-wider hover:opacity-90 transition-opacity shadow-xl"
+                className="rounded-sm uppercase transition-opacity shadow-xl"
               >
                 {data.cta.content}
               </button>
+              
+              {/* CTA Decoration */}
+              {ctaDecoration && ctaDecoration.id !== 'none' && (
+                <div style={{ marginTop: '0.8em', color: data.ctaDecorationColor }}>
+                   <svg 
+                    width={`${baseScale * 60}px`} 
+                    height={`${baseScale * 60}px`} 
+                    viewBox="0 0 24 24" 
+                    fill={ctaDecoration.fill ? 'currentColor' : 'none'} 
+                    stroke={!ctaDecoration.fill ? 'currentColor' : 'none'} 
+                    strokeWidth="1.5"
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                    style={{
+                      transform: data.layout.textAlign === 'left' ? 'translateX(20px)' : data.layout.textAlign === 'right' ? 'translateX(-20px)' : 'none'
+                    }}
+                   >
+                     <path d={ctaDecoration.svg || ''} />
+                   </svg>
+                </div>
+              )}
             </div>
           )}
         </div>
